@@ -90,11 +90,13 @@ def framework(prefix: Path, root: Path, sdk: str, lib: str) -> Path:
     # make Clang infer separate submodules for the same declarations and
     # produce AVMediaType / AVClassCategory redefinition errors.
     shutil.copytree(prefix / "include" / f"lib{lib}", dest / "Headers")
-    (dest / "Headers" / (name + ".h")).write_text(
-        f"#pragma once\n#include \"lib{lib}/{lib}.h\"\n"
-        if lib not in ("swresample", "swscale") else
-        f"#pragma once\n#include \"lib{lib}/{lib}.h\"\n"
-    )
+    # The FFmpeg C API distributes public enums over separate headers.
+    # PrismCore imports Libavutil and uses AV_SAMPLE_FMT_NONE; importing
+    # libavutil/avutil.h alone does not re-export libavutil/samplefmt.h.
+    umbrella = f'#pragma once\n#include "lib{lib}/{lib}.h"\n'
+    if lib == "avutil":
+        umbrella += '#include "libavutil/samplefmt.h"\n'
+    (dest / "Headers" / (name + ".h")).write_text(umbrella)
     (dest / "Modules" / "module.modulemap").write_text(
         f"framework module {name} {{\n"
         f"    umbrella header \"{name}.h\"\n"
