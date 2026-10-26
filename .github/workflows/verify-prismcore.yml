@@ -131,6 +131,7 @@ jobs:
           import pathlib,subprocess,sys
           app=pathlib.Path(sys.argv[1])
           binaries=[app/"DynamicFFmpegSmoke"]
+          binaries.extend(sorted(app.glob("*.debug.dylib")))
           binaries.extend(
               x/x.stem for x in sorted((app/"Frameworks").glob("*.framework"))
               if (x/x.stem).is_file()
@@ -147,7 +148,7 @@ jobs:
                   if dep==f"@rpath/{binary.parent.name}/{binary.name}":
                       continue
                   relative=dep[len("@rpath/"):]
-                  if not (app/"Frameworks"/relative).is_file():
+                  if not ((app/"Frameworks"/relative).is_file() or (app/relative).is_file()):
                       missing.append(f"{binary.relative_to(app)} -> {dep}")
           for message in missing:
               print("DYLD MISSING:",message)
