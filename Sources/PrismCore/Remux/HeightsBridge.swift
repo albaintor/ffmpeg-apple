@@ -143,8 +143,12 @@ final class HeightsBridge: RenditionEncoder {
         }
         encoder.bitRate = bitRate
         // Film mastered offline, which is what a TrueHD track is.
+        // These AVAudioConverter controls are present only in newer Apple
+        // SDKs. Keep them when available; older SDKs cannot set them.
+        #if compiler(>=6.2)
         encoder.contentSource = .appleAV_Spatial_Offline
         encoder.dynamicRangeControlConfiguration = .none
+        #endif
         return (encoder, pcm)
     }
 
