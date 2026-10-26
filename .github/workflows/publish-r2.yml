@@ -1,0 +1,70 @@
+name: Publish FFmpeg dynamic XCFrameworks r2
+
+on:
+  workflow_run:
+    workflows: ["FFmpeg iOS LGPL dynamic XCFrameworks"]
+    types: [completed]
+
+permissions:
+  actions: read
+  contents: write
+
+jobs:
+  publish:
+    if: >
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.head_branch == 'main' &&
+      github.event.workflow_run.event == 'push'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download verified FFmpeg build artifacts
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_ID: ${{ github.event.workflow_run.id }}
+          SOURCE_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          set -euo pipefail
+          RELEASE_TAG=build-v8.1.3-r2
+          if gh release view "$RELEASE_TAG" -R "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "r2 already exists: keeping release immutable"
+            exit 0
+          fi
+          if [[ "$SOURCE_SHA" != "22c470085540983017e0c7e186cd368f5ad45281" ]]; then
+            echo "Ignoring unrelated FFmpeg build $SOURCE_SHA"; exit 0
+          fi
+          mkdir -p dist
+          gh run download "$RUN_ID" -R "$GITHUB_REPOSITORY" \
+            -n ffmpeg-ios-xcframeworks -D dist
+          python3 - <<'PY'
+          import hashlib,json,pathlib
+          d=pathlib.Path('dist')
+          meta=json.loads((d/'build-manifest.json').read_text())
+          assert meta['git_sha']=='1041abdc962f4cc4f394aa8de9dc5236c0c3b9e7'
+          assert len(meta['ffmpeg_libraries'])==7
+          for item in [*meta['ffmpeg_libraries'].values(), meta['source_archive']]:
+              content=(d/item['file']).read_bytes()
+              assert hashlib.sha256(content).hexdigest()==item['sha256'],item['file']
+          print('Validated FFmpeg r2 matching source and seven dynamic frameworks')
+          PY
+          # The generated package manifest refers to build-v8.1.3-r1
+          # when the originating job ran with its default publish input.
+          # Replace that release locator in a generated (never committed) copy.
+          sed 's@build-v8.1.3-r1@build-v8.1.3-r2@g' dist/Package.swift > /tmp/Package.swift
+          gh release create "$RELEASE_TAG" -R "$GITHUB_REPOSITORY" \
+            --target "$SOURCE_SHA" \
+            --title "FFmpeg 8.1.3 iOS LGPL dynamic r2" \
+            --notes "Updated Swift module exports for PrismCore. Seven LGPL dynamic XCFrameworks, source and reproducible build configuration. No App Store compliance certification." \
+            dist/Lib*.xcframework.zip dist/FFmpeg-*-source.zip \
+            dist/config-*.mak dist/config-*.h dist/build-manifest.json
+          mkdir /tmp/swiftpm
+          cp /tmp/Package.swift /tmp/swiftpm/Package.swift
+          git -C /tmp/swiftpm init -q
+          git -C /tmp/swiftpm add Package.swift
+          git -C /tmp/swiftpm -c user.name='github-actions[bot]' \
+            -c user.email='41898282+github-actions[bot]@users.noreply.github.com' \
+            commit -qm "SwiftPM FFmpegApple r2 binary package"
+          git -C /tmp/swiftpm tag v8.1.3-r2
+          git -C /tmp/swiftpm remote add origin \
+            "https://x-access-token:$GH_TOKEN@github.com/$GITHUB_REPOSITORY.git"
+          git -C /tmp/swiftpm push origin v8.1.3-r2
+          echo "Published dynamic r2 and checksum-pinned SwiftPM tag"
