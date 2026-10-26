@@ -1,0 +1,1 @@
+/* FFmpeg dummy module header */
