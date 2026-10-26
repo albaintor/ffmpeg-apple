@@ -75,7 +75,7 @@ jobs:
             -destination 'generic/platform=iOS Simulator' \
             -derivedDataPath "$RUNNER_TEMP/PrismDynamicBuild" \
             -clonedSourcePackagesDirPath "$RUNNER_TEMP/swiftpm" \
-            CODE_SIGNING_ALLOWED=NO build 2>&1 | tee "$RUNNER_TEMP/build.log"
+            ARCHS=arm64 ONLY_ACTIVE_ARCH=YES CODE_SIGNING_ALLOWED=NO build 2>&1 | tee "$RUNNER_TEMP/build.log"
       - name: Check Mach-O dynamically linked FFmpeg bundles in built app
         run: |
           set -euo pipefail
