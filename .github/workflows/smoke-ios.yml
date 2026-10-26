@@ -1,0 +1,58 @@
+name: Smoke test PrismCore with dynamic FFmpeg
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'smoke-ios/**'
+      - '.github/workflows/smoke-ios.yml'
+      - 'adapters/MPVKit/**'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  ios-smoke:
+    runs-on: macos-15
+    timeout-minutes: 100
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install XcodeGen
+        run: brew install xcodegen
+      - name: Generate iOS smoke project
+        run: xcodegen generate --spec smoke-ios/project.yml
+      - name: Resolve PrismCore and local dynamic MPVKit
+        run: |
+          set -euo pipefail
+          xcodebuild -resolvePackageDependencies \
+            -project smoke-ios/DynamicFFmpegSmoke.xcodeproj \
+            -scheme DynamicFFmpegSmoke \
+            -clonedSourcePackagesDirPath "$RUNNER_TEMP/ffmpeg-smoke-swiftpm" \
+            2>&1 | tee "$RUNNER_TEMP/ios-resolve.log"
+      - name: Build an actual iOS Simulator executable with PrismCore
+        run: |
+          set -euo pipefail
+          xcodebuild -project smoke-ios/DynamicFFmpegSmoke.xcodeproj \
+            -scheme DynamicFFmpegSmoke -configuration Debug \
+            -destination 'generic/platform=iOS Simulator' \
+            -derivedDataPath "$RUNNER_TEMP/DynamicFFmpegSmokeDerived" \
+            -clonedSourcePackagesDirPath "$RUNNER_TEMP/ffmpeg-smoke-swiftpm" \
+            CODE_SIGNING_ALLOWED=NO build 2>&1 | tee "$RUNNER_TEMP/ios-build.log"
+      - name: Assert seven dynamic FFmpeg frameworks embedded
+        run: |
+          set -euo pipefail
+          APP="$RUNNER_TEMP/DynamicFFmpegSmokeDerived/Build/Products/Debug-iphonesimulator/DynamicFFmpegSmoke.app"
+          for lib in Libavutil Libswresample Libswscale Libavcodec Libavformat Libavfilter Libavdevice; do
+            BIN="$APP/Frameworks/$lib.framework/$lib"
+            test -f "$BIN"
+            file "$BIN" | grep -q "dynamically linked shared library"
+            otool -L "$BIN" | grep -q "@rpath/$lib.framework/$lib"
+          done
+      - name: Upload build reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dynamic-ffmpeg-prismcore-smoke-reports
+          path: |
+            ${{ runner.temp }}/ios-build.log
+            ${{ runner.temp }}/ios-resolve.log
+          if-no-files-found: ignore
+          retention-days: 7
