@@ -41,7 +41,7 @@ def sha256(path: Path) -> str:
     return h.hexdigest()
 
 def repair_archive(source: Path, destination: Path, component: str) -> dict:
-    source_prefix=component[3:].lower()
+    source_prefix=component.lower()
     umbrella=f"{component}.h"
     patched=0
     processed=set()
@@ -57,7 +57,7 @@ def repair_archive(source: Path, destination: Path, component: str) -> dict:
                 missing=[name for name in requested if name+".h" not in available]
                 if missing: # optional/OS-specific headers differ between device and sim
                     requested=[name for name in requested if name+".h" in available]
-                assert source_prefix+".h" in available
+                assert component[3:].lower()+".h" in available
                 data=("#pragma once\n"+
                       "".join(f'#include "{source_prefix}/{header}.h"\n' for header in requested)).encode()
                 patched+=1
@@ -70,10 +70,14 @@ def repair_archive(source: Path, destination: Path, component: str) -> dict:
                 # Explicitly list all other headers as textual, so Clang never
                 # infers incomplete Libavutil.samplefmt-style submodules.
                 # Imported API is defined by the platform-safe umbrella.
-                textual="".join(f'    textual header "{h}"\n' for h in available if h!=umbrella)
+                public_headers={name+".h" for name in PRIMARY[component]}
+                declarations="".join(
+                    f'    {"header" if h in public_headers else "textual header"} "{h}"\n'
+                    for h in available if h!=umbrella
+                )
                 data=(f'framework module {component} {{\n'
                       f'    umbrella header "{umbrella}"\n'
-                      f'{textual}'
+                      f'{declarations}'
                       '    export *\n'
                       '}\n').encode()
                 patched+=1
