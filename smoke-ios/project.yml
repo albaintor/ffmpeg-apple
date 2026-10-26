@@ -8,10 +8,7 @@ settings:
     SWIFT_VERSION: "6.0"
 packages:
   PrismCore:
-    url: https://github.com/Wenzlik/PrismCore.git
-    exactVersion: 3.8.0
-  MPVKit:
-    path: ../adapters/MPVKit
+    path: ..
 targets:
   DynamicFFmpegSmoke:
     platform: iOS
@@ -20,7 +17,6 @@ targets:
       - path: SmokeApp.swift
     dependencies:
       - package: PrismCore
-      - package: MPVKit
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: fr.albaintor.dynamicffmpegsmoke
