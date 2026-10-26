@@ -51,6 +51,13 @@ jobs:
           PY
       - name: Generate Xcode app with local PrismCore and one MPVKit
         run: xcodegen generate --spec smoke-ios/project.yml
+      - name: Reset shared SwiftPM artifact cache after unpacking LGPL binaries
+        run: |
+          # The macOS GitHub runner may carry SwiftPM artifact download
+          # directories from XcodeGen/other package-graph operations.
+          # Otherwise SwiftPM reports an "already exists in file system"
+          # artifact extraction failure before Swift compilation.
+          rm -rf "$HOME/Library/Caches/org.swift.swiftpm/artifacts"
       - name: Resolve SwiftPM graph
         run: |
           set -euo pipefail
