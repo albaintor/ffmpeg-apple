@@ -123,6 +123,37 @@ jobs:
             done < <(otool -L "$BIN" | awk 'NR>1 {print $1}')
           done
           echo "Device ARM64 dylibs and FFmpeg interdependencies are embedded."
+      - name: Audit complete device dyld closure (all non-system libraries)
+        run: |
+          set -euo pipefail
+          APP="$RUNNER_TEMP/PrismDynamicDevice/Build/Products/Debug-iphoneos/DynamicFFmpegSmoke.app"
+          python3 - "$APP" <<'PY'
+          import pathlib,subprocess,sys
+          app=pathlib.Path(sys.argv[1])
+          binaries=[app/"DynamicFFmpegSmoke"]
+          binaries.extend(
+              x/x.stem for x in sorted((app/"Frameworks").glob("*.framework"))
+              if (x/x.stem).is_file()
+          )
+          missing=[]
+          for binary in binaries:
+              deps=subprocess.check_output(
+                  ["otool","-L",str(binary)],text=True
+              ).splitlines()[1:]
+              for line in deps:
+                  dep=line.strip().split(" (",1)[0]
+                  if not dep.startswith("@rpath/") or dep.startswith("@rpath/libswift"):
+                      continue
+                  if dep==f"@rpath/{binary.parent.name}/{binary.name}":
+                      continue
+                  relative=dep[len("@rpath/"):]
+                  if not (app/"Frameworks"/relative).is_file():
+                      missing.append(f"{binary.relative_to(app)} -> {dep}")
+          for message in missing:
+              print("DYLD MISSING:",message)
+          assert not missing,missing
+          print("All app/framework non-system @rpath libraries are embedded.")
+          PY
       - name: Upload diagnostics
         if: always()
         uses: actions/upload-artifact@v4
