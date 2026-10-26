@@ -1,0 +1,77 @@
+name: Repackage FFmpeg Swift header r3
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/repackage-r3.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Repackage validated FFmpeg binary with correctly exported C enum header
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          if gh release view build-v8.1.3-r3 >/dev/null 2>&1; then
+            echo "r3 already exists"; exit 0
+          fi
+          mkdir dist
+          gh release download build-v8.1.3-r2 -D dist \
+            -p '*.xcframework.zip' -p 'FFmpeg-*-source.zip' \
+            -p 'config-*' -p 'build-manifest.json'
+          python3 - <<'PY'
+          import hashlib,json,pathlib,zipfile,os
+          p=pathlib.Path('dist')
+          archive=p/'Libavutil.xcframework.zip'
+          patched=p/'Libavutil-fixed.zip'
+          replaced=0
+          with zipfile.ZipFile(archive) as zi, zipfile.ZipFile(patched,'w') as zo:
+              for info in zi.infolist():
+                  data=zi.read(info.filename)
+                  if info.filename.endswith('/Libavutil.framework/Headers/Libavutil.h'):
+                      data=(
+                          '#pragma once\n'
+                          '#include "libavutil/avutil.h"\n'
+                          '#include "libavutil/samplefmt.h"\n'
+                      ).encode('utf-8')
+                      replaced+=1
+                  zo.writestr(info,data)
+          assert replaced==2,replaced
+          os.replace(patched,archive)
+          mp=p/'build-manifest.json'
+          m=json.loads(mp.read_text())
+          assert len(m['ffmpeg_libraries'])==7
+          m['ffmpeg_libraries']['Libavutil']['sha256']=hashlib.sha256(archive.read_bytes()).hexdigest()
+          m['packaging_note']='Release r3: Libavutil C umbrella has two valid newline-separated includes; all Mach-O binaries identical to r1'
+          for item in [*m['ffmpeg_libraries'].values(),m['source_archive']]:
+              file=p/item['file']
+              assert hashlib.sha256(file.read_bytes()).hexdigest()==item['sha256'],file
+          mp.write_text(json.dumps(m,indent=2)+'\n')
+          print('Validated seven pinned frameworks and both Swift umbrella headers')
+          PY
+          python3 scripts/make_swiftpm.py --manifest dist/build-manifest.json \
+            --tag build-v8.1.3-r3 --output dist/Package.swift
+          gh release create build-v8.1.3-r3 \
+            --target 22c470085540983017e0c7e186cd368f5ad45281 \
+            --title "FFmpeg 8.1.3 dynamic XCFrameworks - Swift C API r3" \
+            --notes "FFmpeg 8.1.3 LGPL dynamic frameworks, identical Mach-O to original successful r1 build. Corrected Libavutil umbrella header includes libavutil/samplefmt.h with an actual newline. Matching source, configuration and SHA256 checksums. This is not legal certification of an app." \
+            dist/Lib*.xcframework.zip dist/FFmpeg-*-source.zip \
+            dist/config-*.mak dist/config-*.h dist/build-manifest.json
+          mkdir tmp-package
+          cp dist/Package.swift tmp-package/Package.swift
+          git -C tmp-package init -q
+          git -C tmp-package add Package.swift
+          git -C tmp-package -c user.name='github-actions[bot]' \
+            -c user.email='41898282+github-actions[bot]@users.noreply.github.com' \
+            commit -qm "SwiftPM dynamic FFmpeg Apple r3"
+          git -C tmp-package tag v8.1.3-r3
+          git -C tmp-package remote add origin \
+            "https://x-access-token:$GH_TOKEN@github.com/$GITHUB_REPOSITORY.git"
+          git -C tmp-package push origin v8.1.3-r3
