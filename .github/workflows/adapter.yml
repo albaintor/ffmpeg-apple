@@ -24,7 +24,7 @@ jobs:
           expected={'Libavcodec','Libavdevice','Libavfilter','Libavformat','Libavutil','Libswresample','Libswscale'}
           assert expected.issubset(t),sorted(set(expected)-set(t))
           for name in expected:
-              assert 'albaintor/ffmpeg-apple/releases/download/build-v8.1.3-r1' in json.dumps(t[name]),name
+              assert 'albaintor/ffmpeg-apple/releases/download/build-v8.1.3-r2' in json.dumps(t[name]),name
           assert not any(name.endswith('-GPL') for name in t),list(t)
           assert (data['products'][0]['name'] if 'name' in data['products'][0] else True)
           print('All seven FFmpeg targets use the published dynamic LGPL XCFrameworks')
