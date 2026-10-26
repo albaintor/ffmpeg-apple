@@ -51,7 +51,7 @@ def build_slice(source: Path, root: Path, sdk: str) -> tuple[Path, Path]:
     common = [
         f"--prefix={prefix}", "--target-os=darwin", "--arch=arm64",
         "--enable-cross-compile", f"--cc={clang}", f"--sysroot={sysroot}",
-        f"--extra-cflags={sdkflags}", f"--extra-ldflags=-target {target} -isysroot {sysroot}",
+        f"--extra-cflags={sdkflags}", f"--extra-ldflags=-target {target} -isysroot {sysroot} -Wl,-headerpad_max_install_names",
         "--enable-shared", "--disable-static", "--enable-pic",
         "--disable-programs", "--disable-doc", "--disable-debug",
         "--disable-autodetect", "--disable-audiotoolbox",
