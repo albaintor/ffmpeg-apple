@@ -57,7 +57,7 @@ jobs:
           for item in [*m['ffmpeg_libraries'].values(),m['source_archive']]:
               file=root/item['file']
               assert hashlib.sha256(file.read_bytes()).hexdigest()==item['sha256'],file
-          meta_path.write_text(json.dumps(m,indent=2)+'\\n')
+          meta_path.write_text(json.dumps(m,indent=2)+'\n')
           print('Verified',count,'headers and all checksum-pinned XCFrameworks')
           PY
           python3 scripts/make_swiftpm.py \
