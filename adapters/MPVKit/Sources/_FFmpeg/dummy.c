@@ -1,0 +1,1 @@
+/* LGPL FFmpeg package target wrapper. Dynamic XCFramework binaries are used. */
