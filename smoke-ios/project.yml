@@ -9,6 +9,9 @@ settings:
 packages:
   PrismCore:
     path: ..
+  AMSMB2:
+    url: https://github.com/amosavian/AMSMB2.git
+    exactVersion: 4.0.3
 targets:
   DynamicFFmpegSmoke:
     platform: iOS
@@ -17,6 +20,7 @@ targets:
       - path: SmokeApp.swift
     dependencies:
       - package: PrismCore
+      - package: AMSMB2
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: fr.albaintor.dynamicffmpegsmoke
