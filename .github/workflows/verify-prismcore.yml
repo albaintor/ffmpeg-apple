@@ -86,6 +86,43 @@ jobs:
             file "$BIN" | grep -q 'dynamically linked shared library'
             otool -L "$BIN" | grep -q "@rpath/$item.framework/$item"
           done
+      - name: Build device ARM64 smoke app (real iOS Mach-O, no signing)
+        run: |
+          set -euo pipefail
+          xcodebuild -project smoke-ios/DynamicFFmpegSmoke.xcodeproj \
+            -scheme DynamicFFmpegSmoke -configuration Debug \
+            -destination 'generic/platform=iOS' \
+            -derivedDataPath "$RUNNER_TEMP/PrismDynamicDevice" \
+            -clonedSourcePackagesDirPath "$RUNNER_TEMP/swiftpm" \
+            ARCHS=arm64 ONLY_ACTIVE_ARCH=YES CODE_SIGNING_ALLOWED=NO \
+            build 2>&1 | tee "$RUNNER_TEMP/build-device.log"
+      - name: Verify iPhone Mach-O dynamic framework closure
+        run: |
+          set -euo pipefail
+          APP="$RUNNER_TEMP/PrismDynamicDevice/Build/Products/Debug-iphoneos/DynamicFFmpegSmoke.app"
+          test -f "$APP/DynamicFFmpegSmoke"
+          for lib in Libavcodec Libavdevice Libavfilter Libavformat Libavutil Libswresample Libswscale; do
+            BIN="$APP/Frameworks/$lib.framework/$lib"
+            test -f "$BIN" || { echo "Missing $BIN"; exit 1; }
+            lipo -archs "$BIN" | grep -qw arm64
+            otool -L "$BIN" | grep -Fq "@rpath/$lib.framework/$lib"
+            otool -l "$BIN" | awk '
+              /cmd LC_BUILD_VERSION/ {s=1;next}
+              s && /platform / {if ($2 != "2" && $2 != "IOS") exit 1; found=1; exit 0}
+              END {if (!found) exit 1}
+            '
+            while IFS= read -r dependency; do
+              case "$dependency" in
+                @rpath/Lib*.framework/Lib*)
+                  target="${dependency#@rpath/}"
+                  test -f "$APP/Frameworks/$target" || {
+                    echo "$lib depends on missing $dependency"; exit 1;
+                  }
+                  ;;
+              esac
+            done < <(otool -L "$BIN" | awk 'NR>1 {print $1}')
+          done
+          echo "Device ARM64 dylibs and FFmpeg interdependencies are embedded."
       - name: Upload diagnostics
         if: always()
         uses: actions/upload-artifact@v4
@@ -93,6 +130,7 @@ jobs:
           name: prismcore-dynamic-build
           path: |
             ${{ runner.temp }}/build.log
+            ${{ runner.temp }}/build-device.log
             ${{ runner.temp }}/resolve.log
             repacked/build-manifest.json
           if-no-files-found: ignore
