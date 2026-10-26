@@ -1,0 +1,66 @@
+name: Publish modular LGPL FFmpeg r4
+on:
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check PrismCore dynamic smoke build passed
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          JOB=$(gh run list --repo "$GITHUB_REPOSITORY" --workflow verify-prismcore.yml \
+            --branch prismcore-dynamic --json conclusion -q '.[0].conclusion')
+          test "$JOB" = success || { echo "Dynamic PrismCore CI must pass before publishing, got $JOB"; exit 1; }
+      - name: Download original binary LGPL release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          gh release download build-v8.1.3-r2 -D dist -p 'Lib*.xcframework.zip' \
+            -p 'FFmpeg-*-source.zip' -p 'config-*' -p 'build-manifest.json'
+      - name: Repair module maps without changing Mach-O binaries
+        run: |
+          set -euo pipefail
+          python3 scripts/repackage_modules.py --source dist --out repacked
+          cp dist/FFmpeg-*-source.zip repacked/
+          cp dist/config-*.mak repacked/
+          cp dist/config-*.h repacked/
+          python3 scripts/make_swiftpm.py --manifest repacked/build-manifest.json \
+            --tag build-v8.1.3-r4 --output repacked/Package.swift
+      - name: Upload exact release asset set
+        uses: actions/upload-artifact@v4
+        with:
+          name: ffmpeg-r4-publish-ready
+          path: repacked/
+          retention-days: 30
+      - name: Publish immutable assets and SwiftPM tag
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          if gh release view build-v8.1.3-r4 >/dev/null 2>&1; then
+            echo "r4 already published; do not overwrite immutable checksums"
+            exit 1
+          fi
+          gh release create build-v8.1.3-r4 \
+            --title 'FFmpeg Apple 8.1.3 LGPL dynamic - modular C headers' \
+            --notes 'Seven verified dynamic iOS XCFrameworks, unchanged FFmpeg Mach-O binaries; revised Clang module maps. Includes source, build configuration, checksums. Application LGPL obligations require separate assessment.' \
+            repacked/Lib*.xcframework.zip repacked/FFmpeg-*-source.zip \
+            repacked/config-*.mak repacked/config-*.h repacked/build-manifest.json
+          mkdir package-tag
+          cp repacked/Package.swift package-tag/Package.swift
+          git -C package-tag init -q
+          git -C package-tag add Package.swift
+          git -C package-tag -c user.name='github-actions[bot]' \
+            -c user.email='41898282+github-actions[bot]@users.noreply.github.com' \
+            commit -qm 'FFmpeg Apple binary SwiftPM v8.1.3-r4'
+          git -C package-tag tag v8.1.3-r4
+          git -C package-tag remote add origin \
+            "https://x-access-token:$GH_TOKEN@github.com/$GITHUB_REPOSITORY.git"
+          git -C package-tag push origin v8.1.3-r4
