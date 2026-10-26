@@ -60,8 +60,10 @@ def build_slice(source: Path, root: Path, sdk: str) -> tuple[Path, Path]:
     ]
     cmd(source / "configure", *common, cwd=build)
     config = (build / "ffbuild" / "config.mak").read_text()
-    if "CONFIG_GPL=yes" in config or "CONFIG_NONFREE=yes" in config or "CONFIG_VERSION3=yes" in config:
-        raise RuntimeError("Forbidden GPL/nonfree/version3 FFmpeg configuration")
+    for forbidden in ("CONFIG_GPL", "CONFIG_NONFREE", "CONFIG_VERSION3"):
+        match = re.search(rf"^{forbidden}=yes$", config, flags=re.MULTILINE)
+        if match:
+            raise RuntimeError(f"Forbidden LGPL build configuration: {match.group(0)}")
     jobs = min(os.cpu_count() or 4, 6)
     cmd("make", "-j", str(jobs), cwd=build)
     cmd("make", "install", cwd=build)
