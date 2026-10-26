@@ -70,10 +70,14 @@ def repair_archive(source: Path, destination: Path, component: str) -> dict:
                 # Explicitly list all other headers as textual, so Clang never
                 # infers incomplete Libavutil.samplefmt-style submodules.
                 # Imported API is defined by the platform-safe umbrella.
-                textual="".join(f'    textual header "{h}"\n' for h in available if h!=umbrella)
+                public_headers={name+".h" for name in PRIMARY[component]}
+                declarations="".join(
+                    f'    {"header" if h in public_headers else "textual header"} "{h}"\n'
+                    for h in available if h!=umbrella
+                )
                 data=(f'framework module {component} {{\n'
                       f'    umbrella header "{umbrella}"\n'
-                      f'{textual}'
+                      f'{declarations}'
                       '    export *\n'
                       '}\n').encode()
                 patched+=1
