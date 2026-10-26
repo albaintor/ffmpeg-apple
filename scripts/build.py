@@ -44,8 +44,7 @@ def build_slice(source: Path, root: Path, sdk: str) -> tuple[Path, Path]:
     build = root / f"build-{sdk}"
     prefix = root / f"install-{sdk}"
     build.mkdir(parents=True, exist_ok=True)
-    platform = "ios" if sdk == "iphoneos" else "ios-simulator"
-    target = f"arm64-apple-{platform}{MIN_IOS}"
+    target = f"arm64-apple-ios{MIN_IOS}" if sdk == "iphoneos" else f"arm64-apple-ios{MIN_IOS}-simulator"
     sysroot = cmd("xcrun", "--sdk", sdk, "--show-sdk-path", capture=True)
     clang = cmd("xcrun", "--sdk", sdk, "--find", "clang", capture=True)
     sdkflags = f"-target {target} -isysroot {sysroot} -O2 -fPIC"
@@ -135,6 +134,8 @@ def framework(prefix: Path, root: Path, sdk: str, lib: str) -> Path:
 def zip_xcframework(source: Path, dest: Path) -> None:
     with zipfile.ZipFile(dest, "w", compression=zipfile.ZIP_DEFLATED, compresslevel=6) as archive:
         for path in sorted(source.rglob("*")):
+            if ".git" in path.relative_to(source).parts:
+                continue
             if path.is_file():
                 archive.write(path, (Path(source.name) / path.relative_to(source)).as_posix())
 
