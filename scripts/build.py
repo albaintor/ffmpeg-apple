@@ -86,6 +86,14 @@ def framework(prefix: Path, root: Path, sdk: str, lib: str) -> Path:
     shutil.copy2(dylib(prefix, lib), dest / name)
     # Headers from all built FFmpeg modules are required for cross-module C includes.
     shutil.copytree(prefix / "include", dest / "Headers")
+    # Clang treats `libavutil/foo.h` as a framework-style include whenever
+    # Libavutil.framework is on the -F search path, and resolves it as
+    # `Libavutil.framework/Headers/foo.h`. FFmpeg's native install layout
+    # instead uses `include/libavutil/foo.h`, so retain that layout AND
+    # copy the module's public headers to framework/Headers itself.
+    # In particular, libavutil/macros.h needs libavutil/avconfig.h.
+    for header in (prefix / "include" / f"lib{lib}").glob("*.h"):
+        shutil.copy2(header, dest / "Headers" / header.name)
     (dest / "Headers" / (name + ".h")).write_text(
         f"#pragma once\n#include \"lib{lib}/{lib}.h\"\n"
         if lib not in ("swresample", "swscale") else
