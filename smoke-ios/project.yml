@@ -21,6 +21,9 @@ targets:
     dependencies:
       - package: PrismCore
       - package: AMSMB2
+        embed: true
+        codeSign: true
+        removeHeaders: true
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: fr.albaintor.dynamicffmpegsmoke
