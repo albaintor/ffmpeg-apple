@@ -1,0 +1,84 @@
+name: Publish validated FFmpeg Apple binaries
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/publish-validated.yml'
+
+permissions:
+  actions: read
+  contents: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Obtain known successful iOS build artifacts
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          RUN=40363200045
+          EXPECTED_SHA=0f0ef9e03fcc5c49ba921a5bcc1038743ac715da
+          DATA="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$RUN")"
+          echo "$DATA" | jq -e --arg sha "$EXPECTED_SHA" \
+            '.conclusion == "success" and .head_sha == $sha' >/dev/null
+          mkdir -p dist
+          gh run download "$RUN" -n ffmpeg-ios-xcframeworks -D dist
+          test -s dist/build-manifest.json
+          test -s dist/Package.swift
+      - name: Verify checksums and expected source
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import hashlib,json,pathlib
+          dist=pathlib.Path('dist')
+          manifest=json.loads((dist/'build-manifest.json').read_text())
+          assert manifest['tag']=='n8.1.3'
+          assert manifest['git_sha']=='1041abdc962f4cc4f394aa8de9dc5236c0c3b9e7'
+          assert len(manifest['ffmpeg_libraries'])==7
+          checksums=[*manifest['ffmpeg_libraries'].values(),manifest['source_archive']]
+          for entry in checksums:
+              f=dist/entry['file']
+              assert f.exists(),f
+              assert hashlib.sha256(f.read_bytes()).hexdigest()==entry['sha256'],f
+          assert all((dist/f'config-{sdk}.mak').exists() for sdk in ('iphoneos','iphonesimulator'))
+          print('Verified 7 archives, corresponding source, and build configuration')
+          PY
+      - name: Publish immutable binary release and versioned Swift package
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          RELEASE_TAG=build-v8.1.3-r1
+          PACKAGE_TAG=v8.1.3-r1
+          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            echo "Binary release already exists; refusing overwrite"
+            exit 1
+          fi
+          if gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$PACKAGE_TAG" >/dev/null 2>&1; then
+            echo "Package tag already exists; refusing overwrite"
+            exit 1
+          fi
+          gh release create "$RELEASE_TAG" \
+            --target 0f0ef9e03fcc5c49ba921a5bcc1038743ac715da \
+            --title "FFmpeg 8.1.3 LGPL XCFrameworks for Apple" \
+            --notes "Pinned upstream unmodified FFmpeg source and audited build scripts. iPhone and iOS Simulator dynamic XCFrameworks; contains source zip/configuration and SHA-256 manifest. This release alone does not certify a consuming app LGPL/App Store compliance." \
+            dist/Lib*.xcframework.zip dist/FFmpeg-*-source.zip \
+            dist/config-*.mak dist/config-*.h dist/build-manifest.json
+          mkdir -p tmp-package
+          cp dist/Package.swift tmp-package/Package.swift
+          git -C tmp-package init -q
+          git -C tmp-package -c user.name="github-actions[bot]" \
+            -c user.email="41898282+github-actions[bot]@users.noreply.github.com" \
+            add Package.swift
+          git -C tmp-package -c user.name="github-actions[bot]" \
+            -c user.email="41898282+github-actions[bot]@users.noreply.github.com" \
+            commit -qm "SwiftPM FFmpegApple binary distribution $PACKAGE_TAG"
+          git -C tmp-package tag "$PACKAGE_TAG"
+          git -C tmp-package remote add origin \
+            "https://x-access-token:$GH_TOKEN@github.com/$GITHUB_REPOSITORY.git"
+          git -C tmp-package push origin "$PACKAGE_TAG"
+          echo "Published $RELEASE_TAG and Swift package tag $PACKAGE_TAG"
