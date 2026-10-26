@@ -1,0 +1,1 @@
+/* LGPL MPVKit package target wrapper. Linked binaries come from pinned XCFrameworks. */
