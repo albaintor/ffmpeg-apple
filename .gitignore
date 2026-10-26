@@ -1,0 +1,6 @@
+.build-ffmpeg/
+dist/
+.DS_Store
+*.xcframework
+*.xcframework.zip
+__pycache__/
