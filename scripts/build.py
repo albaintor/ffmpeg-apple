@@ -49,7 +49,7 @@ def build_slice(source: Path, root: Path, sdk: str) -> tuple[Path, Path]:
     clang = cmd("xcrun", "--sdk", sdk, "--find", "clang", capture=True)
     sdkflags = f"-target {target} -isysroot {sysroot} -O2 -fPIC"
     common = [
-        f"--prefix={prefix}", "--target-os=darwin", "--arch=aarch64",
+        f"--prefix={prefix}", "--target-os=darwin", "--arch=arm64",
         "--enable-cross-compile", f"--cc={clang}", f"--sysroot={sysroot}",
         f"--extra-cflags={sdkflags}", f"--extra-ldflags=-target {target} -isysroot {sysroot}",
         "--enable-shared", "--disable-static", "--enable-pic",
