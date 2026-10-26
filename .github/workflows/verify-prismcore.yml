@@ -1,0 +1,89 @@
+name: Verify patched PrismCore and dynamic FFmpeg headers
+on:
+  push:
+    branches: [prismcore-dynamic]
+    paths:
+      - 'Package.swift'
+      - 'Sources/PrismCore/**'
+      - 'smoke-ios/**'
+      - 'adapters/MPVKit/**'
+      - 'scripts/repackage_modules.py'
+      - '.github/workflows/verify-prismcore.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  ios-simulator:
+    runs-on: macos-15
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install XcodeGen
+        run: brew install xcodegen
+      - name: Download immutable LGPL FFmpeg r2 archives
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          gh release download build-v8.1.3-r2 --repo "$GITHUB_REPOSITORY" -D dist \
+            -p 'Lib*.xcframework.zip' -p 'build-manifest.json'
+      - name: Repair and verify Clang framework module maps
+        run: |
+          set -euo pipefail
+          python3 scripts/repackage_modules.py --source dist --out repacked
+          mkdir -p adapters/MPVKit/Binaries
+          python3 - <<'PY'
+          import pathlib, re, zipfile
+          src=pathlib.Path("adapters/MPVKit/Package.swift")
+          content=src.read_text()
+          for name in ("Libavcodec","Libavdevice","Libavfilter","Libavformat","Libavutil","Libswresample","Libswscale"):
+              z=pathlib.Path("repacked")/(name+".xcframework.zip")
+              with zipfile.ZipFile(z) as bundle:
+                  for entry in bundle.namelist():
+                      path=pathlib.PurePosixPath(entry)
+                      assert not path.is_absolute() and ".." not in path.parts
+                  bundle.extractall("adapters/MPVKit/Binaries")
+              rx=rf'\.binaryTarget\(\s*name:\s*"{name}",\s*url:\s*"[^"]+",\s*checksum:\s*"[0-9a-f]+"\s*\)'
+              content,num=re.subn(rx,f'.binaryTarget(name: "{name}", path: "Binaries/{name}.xcframework")',content)
+              assert num==1,(name,num)
+          src.write_text(content)
+          PY
+      - name: Generate Xcode app with local PrismCore and one MPVKit
+        run: xcodegen generate --spec smoke-ios/project.yml
+      - name: Resolve SwiftPM graph
+        run: |
+          set -euo pipefail
+          xcodebuild -resolvePackageDependencies -project smoke-ios/DynamicFFmpegSmoke.xcodeproj \
+            -scheme DynamicFFmpegSmoke \
+            -clonedSourcePackagesDirPath "$RUNNER_TEMP/swiftpm" 2>&1 | tee "$RUNNER_TEMP/resolve.log"
+      - name: Build Swift PrismCore + seven real dynamic frameworks
+        run: |
+          set -euo pipefail
+          xcodebuild -project smoke-ios/DynamicFFmpegSmoke.xcodeproj \
+            -scheme DynamicFFmpegSmoke -configuration Debug \
+            -destination 'generic/platform=iOS Simulator' \
+            -derivedDataPath "$RUNNER_TEMP/PrismDynamicBuild" \
+            -clonedSourcePackagesDirPath "$RUNNER_TEMP/swiftpm" \
+            CODE_SIGNING_ALLOWED=NO build 2>&1 | tee "$RUNNER_TEMP/build.log"
+      - name: Check Mach-O dynamically linked FFmpeg bundles in built app
+        run: |
+          set -euo pipefail
+          APP="$RUNNER_TEMP/PrismDynamicBuild/Build/Products/Debug-iphonesimulator/DynamicFFmpegSmoke.app"
+          for item in Libavcodec Libavdevice Libavfilter Libavformat Libavutil Libswresample Libswscale; do
+            BIN="$APP/Frameworks/$item.framework/$item"
+            test -f "$BIN"
+            file "$BIN" | grep -q 'dynamically linked shared library'
+            otool -L "$BIN" | grep -q "@rpath/$item.framework/$item"
+          done
+      - name: Upload diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: prismcore-dynamic-build
+          path: |
+            ${{ runner.temp }}/build.log
+            ${{ runner.temp }}/resolve.log
+            repacked/build-manifest.json
+          if-no-files-found: ignore
+          retention-days: 7
