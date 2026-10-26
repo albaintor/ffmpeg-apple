@@ -20,7 +20,7 @@ on:
         default: 'r1'
 
 concurrency:
-  group: ffmpeg-apple-\${{ github.ref }}
+  group: ffmpeg-apple-${{ github.ref }}
   cancel-in-progress: true
 
 permissions:
@@ -72,11 +72,11 @@ jobs:
             file "$slice/$name.framework/$name"
             otool -L "$slice/$name.framework/$name"
           done
-          xcrun swiftc -target arm64-apple-ios17.0-simulator -sdk "$sdk" -typecheck "\${files[@]}" Tests/FFmpegSmoke.swift
+          xcrun swiftc -target arm64-apple-ios17.0-simulator -sdk "$sdk" -typecheck "${files[@]}" Tests/FFmpegSmoke.swift
       - name: Create release manifest and checksum-locked Swift package
         run: |
           set -euo pipefail
-          version="\${{ inputs.release_suffix || 'r1' }}"
+          version="${{ inputs.release_suffix || 'r1' }}"
           if [[ ! "$version" =~ ^r[0-9]+$ ]]; then
             echo "release_suffix must match r<number>"; exit 1
           fi
@@ -103,12 +103,12 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: ffmpeg-ios-build-error
-          path: \${{ runner.temp }}/ffmpeg-build.log
+          path: ${{ runner.temp }}/ffmpeg-build.log
           if-no-files-found: ignore
       - name: Publish release and versioned binary Swift package
         if: github.event_name == 'workflow_dispatch' && inputs.publish == true
         env:
-          GH_TOKEN: \${{ github.token }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           if gh release view "$RELEASE_TAG" > /dev/null 2>&1; then
