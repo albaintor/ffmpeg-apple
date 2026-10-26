@@ -41,7 +41,7 @@ def sha256(path: Path) -> str:
     return h.hexdigest()
 
 def repair_archive(source: Path, destination: Path, component: str) -> dict:
-    source_prefix=component[3:].lower()
+    source_prefix=component.lower()
     umbrella=f"{component}.h"
     patched=0
     processed=set()
