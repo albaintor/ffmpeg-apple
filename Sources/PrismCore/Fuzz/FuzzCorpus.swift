@@ -70,12 +70,17 @@ package enum FuzzSeeds {
         let extendedType: [UInt8] = [0xAA, 0xBB]
         let banner: [UInt8] = [UInt8](repeating: 0x2C, count: 16) + Array("x265".utf8)
         let caption: [UInt8] = [0xB5, 0x00, 0x31, 0x47, 0x41, 0x39, 0x34, 0x03, 0x40, 0xFF]
-        let rbsp: [UInt8] = [0x80, UInt8(structureOfPictures.count)] + structureOfPictures
-            + [0xFF, 0x05, UInt8(extendedType.count)] + extendedType
-            + [0x05, UInt8(banner.count)] + banner
-            + [0x04, UInt8(caption.count)] + caption
-            + [0x04, UInt8(hdr10PlusT35Payload.count)] + hdr10PlusT35Payload
-            + [0x80]
+        var rbsp: [UInt8] = [0x80, UInt8(structureOfPictures.count)]
+        rbsp.append(contentsOf: structureOfPictures)
+        rbsp.append(contentsOf: [0xFF, 0x05, UInt8(extendedType.count)])
+        rbsp.append(contentsOf: extendedType)
+        rbsp.append(contentsOf: [0x05, UInt8(banner.count)])
+        rbsp.append(contentsOf: banner)
+        rbsp.append(contentsOf: [0x04, UInt8(caption.count)])
+        rbsp.append(contentsOf: caption)
+        rbsp.append(contentsOf: [0x04, UInt8(hdr10PlusT35Payload.count)])
+        rbsp.append(contentsOf: hdr10PlusT35Payload)
+        rbsp.append(0x80)
         var escaped: [UInt8] = []
         var zeroRun = 0
         for byte in rbsp {
