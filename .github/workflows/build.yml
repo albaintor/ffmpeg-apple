@@ -1,0 +1,135 @@
+name: FFmpeg iOS LGPL dynamic XCFrameworks
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'scripts/**'
+      - '.github/workflows/build.yml'
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: 'Publish release assets and a versioned SwiftPM tag after successful tests'
+        type: boolean
+        required: false
+        default: false
+      release_suffix:
+        description: 'Release suffix (r1 etc.)'
+        type: string
+        required: false
+        default: 'r1'
+
+concurrency:
+  group: ffmpeg-apple-\${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: macos-15
+    timeout-minutes: 300
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+          persist-credentials: true
+      - name: Toolchain versions
+        run: |
+          set -euo pipefail
+          xcodebuild -version
+          xcrun --sdk iphoneos --show-sdk-path
+          xcrun --sdk iphonesimulator --show-sdk-path
+          swift --version
+      - name: Compile upstream FFmpeg for iPhone and Simulator
+        run: |
+          set -euo pipefail
+          python3 scripts/build.py --out dist --work "$RUNNER_TEMP/ffmpeg-apple-build" 2>&1 | tee "$RUNNER_TEMP/ffmpeg-build.log"
+      - name: Check LGPL-only configuration
+        run: |
+          set -euo pipefail
+          for cfg in dist/config-iphoneos.mak dist/config-iphonesimulator.mak; do
+            test -s "$cfg"
+            ! grep -Eq '^CONFIG_(GPL|NONFREE|VERSION3)=yes$' "$cfg"
+          done
+          test "$(find dist -maxdepth 1 -name 'Lib*.xcframework.zip' | wc -l | tr -d ' ')" = "7"
+          python3 - <<'PY'
+          import json
+          m = json.load(open('dist/build-manifest.json'))
+          assert len(m['ffmpeg_libraries']) == 7
+          assert m['git_sha'] == '1041abdc962f4cc4f394aa8de9dc5236c0c3b9e7'
+          PY
+      - name: Swift Clang-module import smoke test (simulator)
+        run: |
+          set -euo pipefail
+          sdk="$(xcrun --sdk iphonesimulator --show-sdk-path)"
+          files=()
+          for name in Libavutil Libswresample Libswscale Libavcodec Libavformat Libavfilter Libavdevice; do
+            slice="$(find "dist/$name.xcframework" -maxdepth 1 -type d -name '*simulator*' | head -n1)"
+            test -n "$slice"
+            files+=(-F "$slice")
+            file "$slice/$name.framework/$name"
+            otool -L "$slice/$name.framework/$name"
+          done
+          xcrun swiftc -target arm64-apple-ios17.0-simulator -sdk "$sdk" -typecheck "\${files[@]}" Tests/FFmpegSmoke.swift
+      - name: Create release manifest and checksum-locked Swift package
+        run: |
+          set -euo pipefail
+          version="\${{ inputs.release_suffix || 'r1' }}"
+          if [[ ! "$version" =~ ^r[0-9]+$ ]]; then
+            echo "release_suffix must match r<number>"; exit 1
+          fi
+          echo "RELEASE_TAG=build-v8.1.3-$version" >> "$GITHUB_ENV"
+          echo "PACKAGE_TAG=v8.1.3-$version" >> "$GITHUB_ENV"
+          python3 scripts/make_swiftpm.py \
+            --tag "build-v8.1.3-$version" --output dist/Package.swift
+          swift package dump-package --package-path dist > /dev/null
+      - name: Upload testable XCFrameworks and audit materials
+        uses: actions/upload-artifact@v4
+        with:
+          name: ffmpeg-ios-xcframeworks
+          path: |
+            dist/*.xcframework.zip
+            dist/FFmpeg-*-source.zip
+            dist/config-*.mak
+            dist/config-*.h
+            dist/build-manifest.json
+            dist/Package.swift
+          if-no-files-found: error
+          retention-days: 7
+      - name: Upload build log on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ffmpeg-ios-build-error
+          path: \${{ runner.temp }}/ffmpeg-build.log
+          if-no-files-found: ignore
+      - name: Publish release and versioned binary Swift package
+        if: github.event_name == 'workflow_dispatch' && inputs.publish == true
+        env:
+          GH_TOKEN: \${{ github.token }}
+        run: |
+          set -euo pipefail
+          if gh release view "$RELEASE_TAG" > /dev/null 2>&1; then
+            echo "Release already exists. Refusing to overwrite immutable artifacts."
+            exit 1
+          fi
+          gh release create "$RELEASE_TAG" \
+            --title "FFmpeg 8.1.3 for iOS ($RELEASE_TAG)" \
+            --notes "Unmodified upstream FFmpeg 8.1.3 LGPL build. See build-manifest.json, matching source and configure files. No app legal compliance certification." \
+            dist/*.xcframework.zip dist/FFmpeg-*-source.zip dist/config-*.mak dist/config-*.h dist/build-manifest.json dist/Package.swift
+          mkdir -p "$RUNNER_TEMP/swiftpm"
+          cp dist/Package.swift "$RUNNER_TEMP/swiftpm/Package.swift"
+          cd "$RUNNER_TEMP"
+          git clone --quiet "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY.git" package-release
+          cd package-release
+          git checkout --orphan "$PACKAGE_TAG"
+          git rm -rf . >/dev/null
+          cp "$RUNNER_TEMP/swiftpm/Package.swift" Package.swift
+          git add Package.swift
+          git -c user.name='github-actions[bot]' -c user.email='41898282+github-actions[bot]@users.noreply.github.com' commit -m "SwiftPM binary distribution $PACKAGE_TAG"
+          git tag "$PACKAGE_TAG"
+          git push origin "HEAD:refs/heads/swiftpm-$PACKAGE_TAG"
+          git push origin "$PACKAGE_TAG"
+          echo "SwiftPM package: https://github.com/$GITHUB_REPOSITORY at $PACKAGE_TAG"
