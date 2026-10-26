@@ -57,7 +57,7 @@ def repair_archive(source: Path, destination: Path, component: str) -> dict:
                 missing=[name for name in requested if name+".h" not in available]
                 if missing: # optional/OS-specific headers differ between device and sim
                     requested=[name for name in requested if name+".h" in available]
-                assert source_prefix+".h" in available
+                assert component[3:].lower()+".h" in available
                 data=("#pragma once\n"+
                       "".join(f'#include "{source_prefix}/{header}.h"\n' for header in requested)).encode()
                 patched+=1
