@@ -32,7 +32,7 @@ final class HTTPOriginCoordinator: @unchecked Sendable {
             self.id = id
             self.coordinator = coordinator
         }
-        deinit { coordinator.withLock { coordinator.observers.removeValue(forKey: id) } }
+        deinit { _ = coordinator.withLock { coordinator.observers.removeValue(forKey: id) } }
     }
 
     /// Per-session events for `origin`. The coordinator is process-wide, so
