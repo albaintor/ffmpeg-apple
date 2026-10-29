@@ -47,13 +47,15 @@ def build_slice(source: Path, root: Path, sdk: str) -> tuple[Path, Path]:
     target = f"arm64-apple-ios{MIN_IOS}" if sdk == "iphoneos" else f"arm64-apple-ios{MIN_IOS}-simulator"
     sysroot = cmd("xcrun", "--sdk", sdk, "--show-sdk-path", capture=True)
     clang = cmd("xcrun", "--sdk", sdk, "--find", "clang", capture=True)
-    sdkflags = f"-target {target} -isysroot {sysroot} -O2 -fPIC"
+    # Keep DWARF debug maps for dsymutil; App Store Connect needs matching
+    # dSYMs for every distributed dynamic framework, including Release builds.
+    sdkflags = f"-target {target} -isysroot {sysroot} -O2 -g -fPIC"
     common = [
         f"--prefix={prefix}", "--target-os=darwin", "--arch=arm64",
         "--enable-cross-compile", f"--cc={clang}", f"--sysroot={sysroot}",
         f"--extra-cflags={sdkflags}", f"--extra-ldflags=-target {target} -isysroot {sysroot} -Wl,-headerpad_max_install_names",
         "--enable-shared", "--disable-static", "--enable-pic",
-        "--disable-programs", "--disable-doc", "--disable-debug",
+        "--disable-programs", "--disable-doc", "--enable-debug=2",
         "--disable-autodetect", "--disable-audiotoolbox",
         "--disable-gpl", "--disable-nonfree", "--disable-version3",
         "--enable-videotoolbox", "--install-name-dir=@rpath",
@@ -139,6 +141,31 @@ def framework(prefix: Path, root: Path, sdk: str, lib: str) -> Path:
     )
     return dest
 
+def create_dsym(framework_path: Path, root: Path, sdk: str) -> Path:
+    """Create DWARF symbols from the same linked Mach-O included in the XCFramework."""
+    name = framework_path.stem
+    binary = framework_path / name
+    dsym = root / "dsyms" / sdk / (name + ".framework.dSYM")
+    dsym.parent.mkdir(parents=True, exist_ok=True)
+    if dsym.exists():
+        shutil.rmtree(dsym)
+    cmd("xcrun", "dsymutil", binary, "-o", dsym)
+    dwarf = dsym / "Contents" / "Resources" / "DWARF" / name
+    if not dwarf.is_file() or dwarf.stat().st_size < 4096:
+        raise RuntimeError(f"Missing or empty dSYM for {sdk}/{name}")
+    binary_uuids = cmd("xcrun", "dwarfdump", "--uuid", binary, capture=True)
+    dsym_uuids = cmd("xcrun", "dwarfdump", "--uuid", dwarf, capture=True)
+    def uuid_set(output: str) -> set[str]:
+        return set(re.findall(r"UUID: ([0-9A-Fa-f-]{36}) \\(arm64\\)", output))
+    # Reject debug symbol bundles whose Mach-O UUID differs from the embedded
+    # binary; App Store Connect will not accept a dSYM from another build.
+    if not uuid_set(binary_uuids) or uuid_set(binary_uuids) != uuid_set(dsym_uuids):
+        raise RuntimeError(
+            f"dSYM UUID mismatch for {sdk}/{name}: "
+            f"binary={binary_uuids.strip()}, dSYM={dsym_uuids.strip()}"
+        )
+    return dsym
+
 def zip_xcframework(source: Path, dest: Path) -> None:
     with zipfile.ZipFile(dest, "w", compression=zipfile.ZIP_DEFLATED, compresslevel=6) as archive:
         for path in sorted(source.rglob("*")):
@@ -179,8 +206,12 @@ def main() -> None:
         target = out / (name + ".xcframework")
         if target.exists():
             shutil.rmtree(target)
-        cmd("xcodebuild", "-create-xcframework", "-framework", device,
-            "-framework", simulator, "-output", target)
+        device_dsym = create_dsym(device, work, "iphoneos")
+        simulator_dsym = create_dsym(simulator, work, "iphonesimulator")
+        cmd("xcodebuild", "-create-xcframework",
+            "-framework", device, "-debug-symbols", device_dsym.resolve(),
+            "-framework", simulator, "-debug-symbols", simulator_dsym.resolve(),
+            "-output", target)
         archive = out / (name + ".xcframework.zip")
         zip_xcframework(target, archive)
         artifacts[name] = {"file": archive.name, "sha256": sha256(archive)}
