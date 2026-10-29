@@ -125,6 +125,24 @@ public final class SoftwarePlaybackPipeline: @unchecked Sendable {
     /// Called on the feed queue whenever `state` changes. Set before `load`.
     public var onStateChange: (@Sendable (State) -> Void)?
 
+    /// Optional observation of decoded video frames actually handed to the
+    /// software display renderer. MEMC clients may install this callback after
+    /// load; invoked on the pipeline's serial feed queue, never on the main
+    /// actor. The callback must be nonblocking and cannot alter the renderer.
+    /// Access is synchronized because the app attaches/detaches from UI code.
+    public var onVideoFrame: (@Sendable (CMSampleBuffer) -> Void)? {
+        get { stateLock.withLock { storedOnVideoFrame } }
+        set { stateLock.withLock { storedOnVideoFrame = newValue } }
+    }
+
+    /// The same media clock used for audio and native decoded video. Clients
+    /// driving a parallel sample-buffer layer must use this timebase, not
+    /// AVSampleBufferDisplayLayer.controlTimebase, which may be nil when
+    /// the synchronizer owns its sampleBufferRenderer directly.
+    public var playbackTimebase: CMTimebase? {
+        (timeline as? SynchronizerTimeline)?.synchronizer.timebase
+    }
+
     public var state: State {
         stateLock.withLock { storedState }
     }
@@ -282,6 +300,7 @@ public final class SoftwarePlaybackPipeline: @unchecked Sendable {
     private var storedAudioDelaySeconds: Double = 0
     private var storedSubtitleDelaySeconds: Double = 0
     private var storedState: State = .idle
+    private var storedOnVideoFrame: (@Sendable (CMSampleBuffer) -> Void)?
     private var storedDurationSeconds: Double?
     private var storedSourceInfo: SourceInfo?
     private let subtitleCues = SoftwareSubtitleCueStore()
@@ -1150,6 +1169,12 @@ public final class SoftwarePlaybackPipeline: @unchecked Sendable {
     private func drainPending() {
         while let next = pendingVideo.first, videoSink.isReadyForMoreSamples {
             videoSink.enqueue(next)
+            // Observe exactly the frames the display renderer accepts.
+            // Do not tap acceptVideo(): decode can run far ahead of the
+            // presentation clock and overflow a small optical-flow queue.
+            // Never execute this callback under stateLock.
+            let observer = onVideoFrame
+            observer?(next)
             pendingVideo.removeFirst()
             pendingVideoBytes = max(0, pendingVideoBytes - Self.decodedByteCount(of: next))
             let pts = CMSampleBufferGetPresentationTimeStamp(next)
