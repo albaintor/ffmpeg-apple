@@ -156,7 +156,7 @@ def create_dsym(framework_path: Path, root: Path, sdk: str) -> Path:
     binary_uuids = cmd("xcrun", "dwarfdump", "--uuid", binary, capture=True)
     dsym_uuids = cmd("xcrun", "dwarfdump", "--uuid", dwarf, capture=True)
     def uuid_set(output: str) -> set[str]:
-        return set(re.findall(r"UUID: ([0-9A-Fa-f-]{36}) \\(arm64\\)", output))
+        return set(re.findall(r"UUID: ([0-9A-Fa-f-]{36}) \(arm64\)", output))
     # Reject debug symbol bundles whose Mach-O UUID differs from the embedded
     # binary; App Store Connect will not accept a dSYM from another build.
     if not uuid_set(binary_uuids) or uuid_set(binary_uuids) != uuid_set(dsym_uuids):
