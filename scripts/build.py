@@ -56,6 +56,7 @@ def build_slice(source: Path, root: Path, sdk: str) -> tuple[Path, Path]:
         f"--extra-cflags={sdkflags}", f"--extra-ldflags=-target {target} -isysroot {sysroot} -Wl,-headerpad_max_install_names",
         "--enable-shared", "--disable-static", "--enable-pic",
         "--disable-programs", "--disable-doc", "--enable-debug=2",
+        "--disable-stripping",
         "--disable-autodetect", "--disable-audiotoolbox",
         "--disable-gpl", "--disable-nonfree", "--disable-version3",
         "--enable-videotoolbox", "--install-name-dir=@rpath",
