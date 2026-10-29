@@ -56,9 +56,20 @@ jobs:
           test "$(find dist -maxdepth 1 -name 'Lib*.xcframework.zip' | wc -l | tr -d ' ')" = "7"
           python3 - <<'PY'
           import json
+          import zipfile
           m = json.load(open('dist/build-manifest.json'))
           assert len(m['ffmpeg_libraries']) == 7
           assert m['git_sha'] == '1041abdc962f4cc4f394aa8de9dc5236c0c3b9e7'
+          for lib, entry in m['ffmpeg_libraries'].items():
+              with zipfile.ZipFile('dist/' + entry['file']) as archive:
+                  names = set(archive.namelist())
+                  for identifier in ('ios-arm64', 'ios-arm64-simulator'):
+                      prefix = f'{lib}.xcframework/{identifier}/'
+                      binary = prefix + f'{lib}.framework/{lib}'
+                      dsym = prefix + f'dSYMs/{lib}.framework.dSYM/Contents/Resources/DWARF/{lib}'
+                      assert binary in names, f'Framework missing: {binary}'
+                      assert dsym in names, f'dSYM missing: {dsym}'
+          print('All seven XCFramework ZIPs contain device + simulator dSYMs.')
           PY
       - name: Swift Clang-module import smoke test (simulator)
         run: |
