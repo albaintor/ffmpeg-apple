@@ -59,6 +59,11 @@ def build_slice(source: Path, root: Path, sdk: str) -> tuple[Path, Path]:
         "--disable-stripping",
         "--disable-autodetect", "--disable-audiotoolbox",
         "--disable-gpl", "--disable-nonfree", "--disable-version3",
+        # Matroska ContentEncodings on PGS/VobSub tracks commonly use
+        # zlib (sometimes bzip2). Without explicit enablement the demuxer
+        # logs "Unsupported encoding type" and returns undecodable packets.
+        # Retain deterministic dependency selection via --disable-autodetect.
+        "--enable-zlib", "--enable-bzlib",
         "--enable-videotoolbox", "--install-name-dir=@rpath",
     ]
     cmd(source / "configure", *common, cwd=build)
@@ -67,6 +72,11 @@ def build_slice(source: Path, root: Path, sdk: str) -> tuple[Path, Path]:
         match = re.search(rf"^{forbidden}=yes$", config, flags=re.MULTILINE)
         if match:
             raise RuntimeError(f"Forbidden LGPL build configuration: {match.group(0)}")
+    for required in ("CONFIG_ZLIB", "CONFIG_BZLIB"):
+        if not re.search(rf"^{required}=yes$", config, flags=re.MULTILINE):
+            raise RuntimeError(
+                f"Matroska subtitle content compression support missing: {required}=yes"
+            )
     jobs = min(os.cpu_count() or 4, 6)
     cmd("make", "-j", str(jobs), cwd=build)
     cmd("make", "install", cwd=build)
