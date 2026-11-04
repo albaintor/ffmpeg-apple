@@ -52,6 +52,7 @@ jobs:
           for cfg in dist/config-iphoneos.mak dist/config-iphonesimulator.mak; do
             test -s "$cfg"
             ! grep -Eq '^CONFIG_(GPL|NONFREE|VERSION3)=yes
+          done
           test "$(find dist -maxdepth 1 -name 'Lib*.xcframework.zip' | wc -l | tr -d ' ')" = "7"
           python3 - <<'PY'
           import json
@@ -144,9 +145,8 @@ jobs:
           git push origin "$PACKAGE_TAG"
           echo "SwiftPM package: https://github.com/$GITHUB_REPOSITORY at $PACKAGE_TAG"
  "$cfg"
-            # The Matroska demuxer must be able to decompress PGS/VobSub
-            # ContentEncodings, otherwise it logs "Unsupported encoding type".
             grep -q '^CONFIG_ZLIB=yes
+          done
           test "$(find dist -maxdepth 1 -name 'Lib*.xcframework.zip' | wc -l | tr -d ' ')" = "7"
           python3 - <<'PY'
           import json
@@ -240,6 +240,7 @@ jobs:
           echo "SwiftPM package: https://github.com/$GITHUB_REPOSITORY at $PACKAGE_TAG"
  "$cfg"
             grep -q '^CONFIG_BZLIB=yes
+          done
           test "$(find dist -maxdepth 1 -name 'Lib*.xcframework.zip' | wc -l | tr -d ' ')" = "7"
           python3 - <<'PY'
           import json
