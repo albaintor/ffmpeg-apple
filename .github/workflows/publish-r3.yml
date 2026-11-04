@@ -1,0 +1,55 @@
+name: Publish FFmpeg compressed Matroska support r3
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/publish-r3.yml'
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  contents: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download successful zlib and bzip2-enabled FFmpeg build
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          RELEASE_TAG=build-v8.1.3-r3
+          if gh release view "$RELEASE_TAG" -R "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "$RELEASE_TAG already exists; refusing to replace immutable assets"
+            exit 0
+          fi
+          mkdir -p dist
+          gh run download 41819391616 -R "$GITHUB_REPOSITORY" \
+            -n ffmpeg-ios-xcframeworks -D dist
+          test "$(find dist -maxdepth 1 -name 'Lib*.xcframework.zip' | wc -l | tr -d ' ')" = "7"
+          for cfg in dist/config-iphoneos.mak dist/config-iphonesimulator.mak; do
+            test -s "$cfg"
+            grep -q '^CONFIG_ZLIB=yes$' "$cfg"
+            grep -q '^CONFIG_BZLIB=yes$' "$cfg"
+            ! grep -Eq '^CONFIG_(GPL|NONFREE|VERSION3)=yes$' "$cfg"
+          done
+          python3 - <<'PY'
+          import hashlib, json, pathlib
+          d = pathlib.Path('dist')
+          meta = json.loads((d / 'build-manifest.json').read_text())
+          assert meta['git_sha'] == '1041abdc962f4cc4f394aa8de9dc5236c0c3b9e7'
+          assert len(meta['ffmpeg_libraries']) == 7
+          for item in [*meta['ffmpeg_libraries'].values(), meta['source_archive']]:
+              payload = (d / item['file']).read_bytes()
+              assert hashlib.sha256(payload).hexdigest() == item['sha256'], item['file']
+          print('Verified source, seven binary archives, zlib/bzip2 configuration')
+          PY
+          gh release create "$RELEASE_TAG" -R "$GITHUB_REPOSITORY" \
+            --target a41d34d439f70fbd236ec967caad4def4a33bc26 \
+            --title "FFmpeg 8.1.3 iOS LGPL dynamic r3 (zlib/bzip2 Matroska)" \
+            --notes "FFmpeg 8.1.3 compiled with explicit zlib/bzip2 Matroska ContentEncodings support. Includes seven dynamic LGPL XCFrameworks for iPhone and simulator, dSYMs, matching upstream source, build manifest and configuration. Application LGPL compliance requires separate review." \
+            dist/Lib*.xcframework.zip dist/FFmpeg-*-source.zip \
+            dist/config-*.mak dist/config-*.h dist/build-manifest.json
+          echo "Published $RELEASE_TAG"
