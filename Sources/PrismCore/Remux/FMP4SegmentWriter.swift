@@ -34,6 +34,14 @@ final class FMP4SegmentWriter {
     var audioDelaySeconds: Double = 0
     /// Where this writer's timestamp repairs are tallied; outlives the writer.
     var timestampRepairs: TimestampRepairLedger?
+    /// For HEVC stream-copy, derive sample durations from the following DTS
+    /// rather than Matroska's sometimes over-long rounded packet.duration.
+    /// A mistaken duration at an fMP4 cut otherwise advances movenc's
+    /// track_duration past the next fragment's real DTS, progressively
+    /// shifting video relative to the unmodified audio PTS.
+    var inferHEVCDurationsFromNextDTS = false
+    private var pendingHEVCVideoPacket: UnsafeMutablePointer<AVPacket>?
+    private var inferredVideoDurationCorrections = 0
     /// One per output stream, created on its first packet. Owned by the writer
     /// so that a re-anchor, which always builds a fresh writer, starts every
     /// stream over: the restarted fragment's tfdt carries absolute time, and a
@@ -65,6 +73,10 @@ final class FMP4SegmentWriter {
     private(set) var streamMap: [Int: Int32] = [:]
 
     deinit {
+        if var pending = pendingHEVCVideoPacket {
+            av_packet_free(&pending)
+            pendingHEVCVideoPacket = nil
+        }
         // Normal teardown runs `finish()`; this is the error-path backstop.
         for index in Array(leadingDTS.keys) {
             for release in leadingDTS[index]?.drain() ?? [] { Self.free(release) }
@@ -282,15 +294,87 @@ final class FMP4SegmentWriter {
     /// each caller: a path that skipped it would fail the whole remux on the
     /// first bad DTS.
     func write(_ packet: UnsafeMutablePointer<AVPacket>) throws {
-        // A stream that reorders pictures has no DTS for its first packets
-        // after a seek: they wait here for the first real one, which numbers
-        // them (`LeadingDTSBackfill`), and only then are repaired and muxed.
+        // Only defer *video* stream-copy with a known decode timestamp.
+        // Audio (including bridged EAC3) is always passed through immediately,
+        // preserving its original presentation clock and packet ordering.
+        let index = Int(packet.pointee.stream_index)
+        let videoHEVC: Bool = {
+            guard inferHEVCDurationsFromNextDTS, let output,
+                  index >= 0, index < Int(output.pointee.nb_streams),
+                  let stream = output.pointee.streams[index] else { return false }
+            return stream.pointee.codecpar.pointee.codec_type == AVMEDIA_TYPE_VIDEO &&
+                stream.pointee.codecpar.pointee.codec_id == AV_CODEC_ID_HEVC
+        }()
+        if videoHEVC {
+            if packet.pointee.dts != swift_AV_NOPTS_VALUE(),
+               leadingDTS[index]?.isSettled != false {
+                // The previous packet is now known to end at this packet's
+                // real DTS. Keep its PTS untouched (including open-GOP/CRA).
+                try flushPendingHEVC(nextDTS: packet.pointee.dts)
+                guard let copy = av_packet_clone(packet) else {
+                    throw FFmpegError(code: -1, operation: "av_packet_clone(video duration lookahead)")
+                }
+                pendingHEVCVideoPacket = copy
+                return
+            }
+            // Keep FFmpeg's established leading-DTS backfill for initial
+            // B-frames, which may have no decode timestamp yet.
+            try flushPendingHEVC(nextDTS: nil)
+        }
+        try muxPacket(packet)
+    }
+
+    /// Before a video keyframe closes the preceding HLS fragment, resolve
+    /// that fragment's last HEVC packet against the incoming keyframe DTS.
+    /// This must run BEFORE cutSegment(), without muxing the keyframe itself:
+    /// that keyframe belongs to the *next* independent segment.
+    func completeVideoBeforeBoundary(
+        nextPacket: UnsafeMutablePointer<AVPacket>,
+        from sourceTimeBase: AVRational
+    ) throws {
+        guard pendingHEVCVideoPacket != nil, let output,
+              let outputIndex = streamMap[Int(nextPacket.pointee.stream_index)],
+              let stream = output.pointee.streams[Int(outputIndex)] else { return }
+        let rawDTS = nextPacket.pointee.dts
+        let nextDTS = rawDTS == swift_AV_NOPTS_VALUE() ? nil
+            : av_rescale_q(rawDTS, sourceTimeBase, stream.pointee.time_base)
+        try flushPendingHEVC(nextDTS: nextDTS)
+    }
+
+    /// Flush one retained packet, inferring its actual duration from the
+    /// next decode timestamp when available. Unlike normalising CFR from
+    /// nominal frame rate, this also respects legitimate VFR intervals.
+    private func flushPendingHEVC(nextDTS: Int64?) throws {
+        guard let held = pendingHEVCVideoPacket else { return }
+        pendingHEVCVideoPacket = nil
+        var toFree: UnsafeMutablePointer<AVPacket>? = held
+        defer { av_packet_free(&toFree) }
+        let priorDTS = held.pointee.dts
+        if let nextDTS, nextDTS > priorDTS,
+           priorDTS != swift_AV_NOPTS_VALUE() {
+            let measured = nextDTS - priorDTS
+            let declared = held.pointee.duration
+            held.pointee.duration = measured
+            if abs(measured - declared) > 1 {
+                inferredVideoDurationCorrections += 1
+                if inferredVideoDurationCorrections <= 3 ||
+                   inferredVideoDurationCorrections % 250 == 0 {
+                    PrismCoreLog.notice(
+                        "HEVC fMP4 duration corrected from \(declared) to \(measured) ticks (count \(inferredVideoDurationCorrections))"
+                    )
+                }
+            }
+        }
+        try muxPacket(held)
+    }
+
+    private func muxPacket(_ packet: UnsafeMutablePointer<AVPacket>) throws {
         let index = Int(packet.pointee.stream_index)
         if leadingDTS[index]?.isSettled == false {
             try writeNumberingLeadingPackets(packet, streamIndex: index)
-            return
+        } else {
+            try repairAndMux(packet)
         }
-        try repairAndMux(packet)
     }
 
     /// Repair the packet's timestamps, apply the audio delay and the timeline
@@ -428,6 +512,7 @@ final class FMP4SegmentWriter {
     /// and keeps queued samples; the second closes the fragment.
     func cutSegment() throws -> (initSegment: Data?, media: Data) {
         guard let output, let avio else { return (nil, Data()) }
+        try flushPendingHEVC(nextDTS: nil)
         try releaseHeldPackets()
         // Drain the interleave queue into movenc first.
         try FFmpegError.check(av_interleaved_write_frame(output, nil), "flush interleave queue")
@@ -448,6 +533,7 @@ final class FMP4SegmentWriter {
     /// Write the trailer and return any final bytes.
     func finish() throws -> Data {
         guard let output, let avio else { return Data() }
+        try flushPendingHEVC(nextDTS: nil)
         try releaseHeldPackets()
         try FFmpegError.check(av_write_trailer(output), "av_write_trailer")
         avio_flush(avio)
