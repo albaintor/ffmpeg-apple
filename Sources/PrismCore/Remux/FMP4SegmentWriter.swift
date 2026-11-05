@@ -73,8 +73,9 @@ final class FMP4SegmentWriter {
     private(set) var streamMap: [Int: Int32] = [:]
 
     deinit {
-        if var pending = pendingHEVCVideoPacket {
-            av_packet_free(&pending)
+        if let pending = pendingHEVCVideoPacket {
+            var owned: UnsafeMutablePointer<AVPacket>? = pending
+            av_packet_free(&owned)
             pendingHEVCVideoPacket = nil
         }
         // Normal teardown runs `finish()`; this is the error-path backstop.
