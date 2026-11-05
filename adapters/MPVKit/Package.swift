@@ -5,7 +5,7 @@ import PackageDescription
 // Home Media Catalog dynamic media experiment.
 // Derived from Wenzlik/MPVKit 1.0.1; LGPLv3 terms retained.
 // The seven FFmpeg binary targets point to independently built and
-// SHA-256-pinned DYNAMIC frameworks from albaintor/ffmpeg-apple v8.1.3-r3.
+// SHA-256-pinned DYNAMIC frameworks from albaintor/ffmpeg-apple build-v8.1.3-r5.
 // All other binary targets, including libmpv, remain upstream's 1.0.0 builds.
 // This alone does not establish LGPL / App Store compliance.
 let package = Package(
@@ -181,38 +181,38 @@ let package = Package(
 
         .binaryTarget(
             name: "Libavcodec",
-            url: "https://github.com/albaintor/ffmpeg-apple/releases/download/build-v8.1.3-r3/Libavcodec.xcframework.zip",
-            checksum: "352c6da0baae2c4fb724d2db0cc1f05aaa7635ae721b586939b0b7d971a83c6f"
+            url: "https://github.com/albaintor/ffmpeg-apple/releases/download/build-v8.1.3-r5/Libavcodec.xcframework.zip",
+            checksum: "d27423b261f63d42d232c9ebe294bf85baee648baf411892cb70e352b48d0fad"
         ),
         .binaryTarget(
             name: "Libavdevice",
-            url: "https://github.com/albaintor/ffmpeg-apple/releases/download/build-v8.1.3-r3/Libavdevice.xcframework.zip",
-            checksum: "a56ab8ecfc4aefad0e92e1f6c1d45b25dce104ada924264421181e12e0ea0f1a"
+            url: "https://github.com/albaintor/ffmpeg-apple/releases/download/build-v8.1.3-r5/Libavdevice.xcframework.zip",
+            checksum: "c998a69ae94ae0e9979f5b08e04bb2d61f1b62f0561b9956ed6e8634b9c85379"
         ),
         .binaryTarget(
             name: "Libavformat",
-            url: "https://github.com/albaintor/ffmpeg-apple/releases/download/build-v8.1.3-r3/Libavformat.xcframework.zip",
-            checksum: "bd4aed587366dc25c02808a4eb26b855167fd41de62632a7ffef82616bf8d294"
+            url: "https://github.com/albaintor/ffmpeg-apple/releases/download/build-v8.1.3-r5/Libavformat.xcframework.zip",
+            checksum: "fd18011f87a2179decd6d14bb2958887c4c23e70ef8d15e5e0fbe24dec6cf074"
         ),
         .binaryTarget(
             name: "Libavfilter",
-            url: "https://github.com/albaintor/ffmpeg-apple/releases/download/build-v8.1.3-r3/Libavfilter.xcframework.zip",
-            checksum: "73468c48aa521e842dfb0fcc81be40bedda08bfab9d9f36d2382a018fd80bc75"
+            url: "https://github.com/albaintor/ffmpeg-apple/releases/download/build-v8.1.3-r5/Libavfilter.xcframework.zip",
+            checksum: "79500b5b122a69f8a98d15f63fd754223e3e2d7f2a06a4deaec8709fc2233fa1"
         ),
         .binaryTarget(
             name: "Libavutil",
-            url: "https://github.com/albaintor/ffmpeg-apple/releases/download/build-v8.1.3-r3/Libavutil.xcframework.zip",
-            checksum: "933aded7b570616fa15a9265c2b7bef3142df7e633a92cfdcedbd2622f747edd"
+            url: "https://github.com/albaintor/ffmpeg-apple/releases/download/build-v8.1.3-r5/Libavutil.xcframework.zip",
+            checksum: "aea2d6f933011e7c453c3b85be99dcd0a95b833067e33e9911810f4146fc84e5"
         ),
         .binaryTarget(
             name: "Libswresample",
-            url: "https://github.com/albaintor/ffmpeg-apple/releases/download/build-v8.1.3-r3/Libswresample.xcframework.zip",
-            checksum: "ceb27310b47b211cd4b8f5d5ebf3f3fbe35ac924f423394f90ef3dc448717ff4"
+            url: "https://github.com/albaintor/ffmpeg-apple/releases/download/build-v8.1.3-r5/Libswresample.xcframework.zip",
+            checksum: "d9d0804aeb3893ddf2b82ae25cc34ae7e3a1d3cea14656d0898a8498d8aa821a"
         ),
         .binaryTarget(
             name: "Libswscale",
-            url: "https://github.com/albaintor/ffmpeg-apple/releases/download/build-v8.1.3-r3/Libswscale.xcframework.zip",
-            checksum: "e13ac4789a70ee3668a21f7dd66d7f56b34b34d59461c6c0def25088347db2ae"
+            url: "https://github.com/albaintor/ffmpeg-apple/releases/download/build-v8.1.3-r5/Libswscale.xcframework.zip",
+            checksum: "4a3ba3f2090c34193b65b0c9cb7d2d0302e6c15fa86ac403d0990d767bb722bd"
         ),
 
         .binaryTarget(
