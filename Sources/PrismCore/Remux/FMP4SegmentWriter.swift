@@ -356,7 +356,7 @@ final class FMP4SegmentWriter {
             let measured = nextDTS - priorDTS
             let declared = held.pointee.duration
             held.pointee.duration = measured
-            if abs(measured - declared) > 1 {
+            if measured != declared {
                 inferredVideoDurationCorrections += 1
                 if inferredVideoDurationCorrections <= 3 ||
                    inferredVideoDurationCorrections % 250 == 0 {
