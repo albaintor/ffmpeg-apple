@@ -8,6 +8,7 @@ on:
       - 'smoke-ios/**'
       - 'adapters/MPVKit/**'
       - 'scripts/repackage_modules.py'
+      - 'tests/**'
       - '.github/workflows/verify-prismcore.yml'
   workflow_dispatch:
 concurrency:
@@ -21,15 +22,18 @@ jobs:
     timeout-minutes: 90
     steps:
       - uses: actions/checkout@v4
+      - name: Verify HEVC fragment timing guardrails
+        run: |
+          python3 -m unittest discover -s tests -p 'test_*_regression.py' -v
       - name: Install XcodeGen
         run: brew install xcodegen
-      - name: Download immutable LGPL FFmpeg r2 archives
+      - name: Download immutable LGPL FFmpeg r5 archives
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           mkdir -p dist
-          gh release download build-v8.1.3-r2 --repo "$GITHUB_REPOSITORY" -D dist \
+          gh release download build-v8.1.3-r5 --repo "$GITHUB_REPOSITORY" -D dist \
             -p 'Lib*.xcframework.zip' -p 'build-manifest.json'
       - name: Repair and verify Clang framework module maps
         run: |
