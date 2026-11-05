@@ -41,8 +41,9 @@ class HEVCFragmentTimingTests(unittest.TestCase):
         self.assertGreaterEqual(
             WRITER.count("try flushPendingHEVC(nextDTS: nil)"), 3
         )
-        self.assertIn("if var pending = pendingHEVCVideoPacket", WRITER)
-        self.assertIn("av_packet_free(&pending)", WRITER)
+        self.assertIn("if let pending = pendingHEVCVideoPacket", WRITER)
+        self.assertIn("var owned: UnsafeMutablePointer<AVPacket>? = pending", WRITER)
+        self.assertIn("av_packet_free(&owned)", WRITER)
         self.assertIn("writer = FMP4SegmentWriter()", REMUXER)
 
     def test_corrected_hevc_duration_does_not_shift_audio_clock(self):
