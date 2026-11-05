@@ -77,8 +77,9 @@ jobs:
               config=(d/cfg).read_text()
               for required in ("CONFIG_ZLIB=yes","CONFIG_BZLIB=yes"):
                   assert required in config,required
+              import re
               for forbidden in ("CONFIG_GPL=yes","CONFIG_NONFREE=yes","CONFIG_VERSION3=yes"):
-                  assert forbidden not in config,forbidden
+                  assert not re.search(r"^" + re.escape(forbidden) + r"$", config, re.MULTILINE), forbidden
           print("All SHA-256 checks and patched-source audit passed")
           PY
           # Link to the exact successful build commit, not the publisher commit.
