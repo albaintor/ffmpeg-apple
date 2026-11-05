@@ -28,9 +28,12 @@ def apply(source_tree: Path) -> None:
     if begin < 0:
         raise RuntimeError("Unexpected movenc.c: check_pkt() not found")
     # Restrict the surgical edit to the check_pkt() implementation.
-    scope_end = code.find("\nstatic ", begin + 1)
+    # check_pkt() ends at the next column-zero closing brace; nearby FFmpeg
+    # functions need not use the static keyword.
+    scope_end = code.find("\n}\n", begin + 1)
     if scope_end < 0:
         raise RuntimeError("Unexpected movenc.c: check_pkt() end not found")
+    scope_end += len("\n}\n")
     fragment = code[begin:scope_end]
     if _MARKER in fragment:
         return  # idempotent for local use
