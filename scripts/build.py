@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build unmodified upstream FFmpeg as LGPL shared XCFrameworks for iOS.
+"""Build FFmpeg n8.1.3 with a scoped movenc PTS fix as LGPL XCFrameworks for iOS.
 
 Run on macOS with Xcode command-line tools. Does not link PrismCore or the app.
 A binary is NOT legally cleared merely because this script succeeds.
@@ -16,6 +16,8 @@ import shutil
 import subprocess
 import sys
 import zipfile
+
+from movenc_pts_patch import PATCH_NAME, PATCH_SOURCE, apply as patch_movenc_pts
 
 VERSION = "n8.1.3"
 COMMIT = "1041abdc962f4cc4f394aa8de9dc5236c0c3b9e7"
@@ -203,7 +205,14 @@ def main() -> None:
     out = args.out.resolve()
     work.mkdir(parents=True, exist_ok=True)
     out.mkdir(parents=True, exist_ok=True)
-    source = fetch(work)
+    # Keep the pinned upstream clone clean and create a complete corresponding
+    # patched source tree for the binary build and the release source archive.
+    upstream = fetch(work)
+    source = work / "upstream-with-movenc-pts-fix"
+    if source.exists():
+        shutil.rmtree(source)
+    shutil.copytree(upstream, source, ignore=shutil.ignore_patterns(".git"))
+    patch_movenc_pts(source)
     installed = {}
     for sdk in ("iphoneos", "iphonesimulator"):
         installed[sdk], build = build_slice(source, work, sdk)
@@ -234,8 +243,10 @@ def main() -> None:
         "platforms": ["ios-arm64", "ios-simulator-arm64"],
         "license_intent": "LGPL-2.1-or-later (verify final config; external licensing review required)",
         "ffmpeg_libraries": artifacts,
+        "source_modifications": [{"name": PATCH_NAME, "reference": PATCH_SOURCE,
+                                  "path": "libavformat/movenc.c"}],
         "source_archive": {"file": source_archive.name, "sha256": sha256(source_archive)},
-        "note": "Does not prove full iOS application's licence compliance or parity with MPVKit.",
+        "note": "Patched FFmpeg build; distribute complete matching modified source. This does not prove full iOS application LGPL compliance or MPVKit parity.",
     }
     (out / "build-manifest.json").write_text(json.dumps(report, indent=2) + "\n")
     print(json.dumps(report, indent=2))
