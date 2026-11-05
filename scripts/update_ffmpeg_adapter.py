@@ -45,6 +45,13 @@ def validate(dist: Path) -> dict:
     manifest = json.loads((dist / "build-manifest.json").read_text())
     if set(manifest.get("ffmpeg_libraries", {})) != set(LIBRARIES):
         raise ValueError("Release must contain exactly seven FFmpeg libraries")
+    # n8.1.3 does not have the movenc PTS fix upstream. Never downgrade to
+    # an unpatched n8.1.3 binary even if its SHA-256 and dSYMs are valid.
+    if manifest.get("tag") == "n8.1.3" and not any(
+        item.get("name") == "movenc-preserve-pts-on-dts-correction"
+        for item in manifest.get("source_modifications", [])
+    ):
+        raise ValueError("FFmpeg n8.1.3 release lacks the required movenc PTS fix")
     for name, entry in [*manifest["ffmpeg_libraries"].items(),
                         ("source", manifest.get("source_archive", {}))]:
         filename = entry.get("file", "")
@@ -58,6 +65,15 @@ def validate(dist: Path) -> dict:
             raise ValueError(f"{name}: missing or SHA-256-mismatched archive")
         if name != "source":
             require_symbols(path, name)
+        elif manifest.get("tag") == "n8.1.3":
+            with zipfile.ZipFile(path) as archive:
+                entries = [p for p in archive.namelist()
+                           if p.endswith("/libavformat/movenc.c")]
+                if len(entries) != 1 or (
+                    b"Preserve presentation offset when correcting decode timestamp"
+                    not in archive.read(entries[0])
+                ):
+                    raise ValueError("Matching FFmpeg source is missing the movenc patch")
     for platform in ("iphoneos", "iphonesimulator"):
         config = (dist / f"config-{platform}.mak").read_text()
         for feature in ("ZLIB", "BZLIB"):
