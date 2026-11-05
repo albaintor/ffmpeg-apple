@@ -1,0 +1,57 @@
+name: Upgrade MPVKit FFmpeg after a verified release
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: "Published release, e.g. build-v8.1.3-r5"
+        required: true
+        type: string
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/update-ffmpeg-adapter.yml'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: ffmpeg-adapter-update
+  cancel-in-progress: false
+
+jobs:
+  upgrade:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: true
+      - name: Validate release and upgrade public PrismCore adapter
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.event.release.tag_name || inputs.release_tag || 'build-v8.1.3-r5' }}
+        run: |
+          set -euo pipefail
+          [[ "$RELEASE_TAG" =~ ^build-v[0-9]+\.[0-9]+\.[0-9]+-r[0-9]+$ ]] || { echo "Invalid release tag"; exit 1; }
+          dist="$RUNNER_TEMP/ffmpeg-release"
+          checkout="$RUNNER_TEMP/prismcore-update"
+          mkdir -p "$dist"
+          gh release download "$RELEASE_TAG" -R "$GITHUB_REPOSITORY" -D "$dist"
+          git fetch origin prismcore-dynamic
+          git worktree add --detach "$checkout" origin/prismcore-dynamic
+          python3 scripts/update_ffmpeg_adapter.py \
+            --release "$RELEASE_TAG" --dist "$dist" \
+            --package "$checkout/adapters/MPVKit/Package.swift"
+          git -C "$checkout" diff --check
+          if ! git -C "$checkout" diff --quiet -- adapters/MPVKit/Package.swift; then
+            git -C "$checkout" config user.name "github-actions[bot]"
+            git -C "$checkout" config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git -C "$checkout" add adapters/MPVKit/Package.swift
+            git -C "$checkout" commit -m "Upgrade FFmpeg XCFrameworks to $RELEASE_TAG (zlib+bzip2, dSYM verified)"
+            git -C "$checkout" push origin HEAD:prismcore-dynamic
+          else
+            echo "Adapter already uses $RELEASE_TAG"
+          fi
