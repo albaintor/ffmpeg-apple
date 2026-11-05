@@ -2,7 +2,7 @@ name: FFmpeg iOS LGPL dynamic XCFrameworks - movenc PTS fix candidate
 
 on:
   push:
-    branches: [main]
+    branches: [main, 'fix/movenc-pts-2026']
     paths:
       - 'scripts/**'
       - '.github/workflows/build.yml'
@@ -93,7 +93,7 @@ jobs:
       - name: Create release manifest and checksum-locked Swift package
         run: |
           set -euo pipefail
-          version="${{ inputs.release_suffix || 'r1' }}"
+          version="${{ inputs.release_suffix || 'r5' }}"
           if [[ ! "$version" =~ ^r[0-9]+$ ]]; then
             echo "release_suffix must match r<number>"; exit 1
           fi
