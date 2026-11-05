@@ -1610,6 +1610,10 @@ final class HLSRemuxer: @unchecked Sendable {
         )
 
         var writer = FMP4SegmentWriter()
+        // Reconstruct HEVC sample durations from decode timestamps so MP4
+        // fragment boundaries do not accumulate +1-frame timestamp clamps.
+        // No video PTS or audio timestamps are shifted by this option.
+        writer.inferHEVCDurationsFromNextDTS = videoTrack.codecName == "hevc"
         writer.audioDelaySeconds = audioDelaySeconds
         writer.timestampRepairs = timestampRepairLedger
         _ = try writer.open(input: input, plan: plan)   // delay_moov: header emits nothing
@@ -2026,6 +2030,7 @@ final class HLSRemuxer: @unchecked Sendable {
                 }
             }
             writer = FMP4SegmentWriter()
+            writer.inferHEVCDurationsFromNextDTS = videoTrack.codecName == "hevc"
             writer.audioDelaySeconds = audioDelaySeconds
             writer.timestampRepairs = timestampRepairLedger
             writer.servedTimelineBase = servedTimelineBase
@@ -2305,6 +2310,13 @@ final class HLSRemuxer: @unchecked Sendable {
                                 // origin is set once.
                                 subtitles.setTimelineOrigin(seconds: Double(pts) * tickSeconds)
                             } else if pts >= nextBoundaryPTS {
+                                // The keyframe starts the *next* segment. Use
+                                // its source DTS to finish the previous HEVC
+                                // sample with the real decode-time interval
+                                // BEFORE movenc finalises this fragment.
+                                try writer.completeVideoBeforeBoundary(
+                                    nextPacket: packet, from: videoTimeBase
+                                )
                                 try emitSegment(endPTS: pts)
                                 // A segment just landed — the one moment the
                                 // lead cap can pause without leaving a partial
